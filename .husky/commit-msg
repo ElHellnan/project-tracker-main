@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Simple commit message validation
+# Ensures commit messages are at least 10 characters long
+commit_regex='^.{10,}$'
+
+if ! grep -qE "$commit_regex" "$1"; then
+    echo "Invalid commit message. Commit messages must be at least 10 characters long."
+    exit 1
+fi
