@@ -1,8 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useProjectStore } from '@/store/projectStore';
 
 export const Projects = () => {
-  const { projects, fetchProjects, isLoading } = useProjectStore();
+  const { projects, fetchProjects, createProject, deleteProject, isLoading } = useProjectStore();
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newProject, setNewProject] = useState({ name: '', description: '', color: '#3B82F6' });
 
   useEffect(() => {
     fetchProjects();
@@ -25,7 +27,10 @@ export const Projects = () => {
             Manage your projects and track progress
           </p>
         </div>
-        <button className="btn-primary">
+        <button 
+          className="btn-primary"
+          onClick={() => setShowCreateModal(true)}
+        >
           Create Project
         </button>
       </div>
@@ -41,8 +46,12 @@ export const Projects = () => {
                 />
                 <h3 className="font-semibold text-gray-900">{project.name}</h3>
               </div>
-              <button className="text-gray-400 hover:text-gray-600">
-                <span className="text-lg">⋮</span>
+              <button 
+                className="text-red-400 hover:text-red-600"
+                onClick={() => deleteProject(project.id)}
+                title="Delete project"
+              >
+                <span className="text-lg">×</span>
               </button>
             </div>
             
@@ -83,9 +92,85 @@ export const Projects = () => {
           <p className="text-gray-600 mb-6">
             Create your first project to get started with organizing your work
           </p>
-          <button className="btn-primary">
+          <button 
+            className="btn-primary"
+            onClick={() => setShowCreateModal(true)}
+          >
             Create Your First Project
           </button>
+        </div>
+      )}
+      {/* Create Project Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Create New Project</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Project Name
+                </label>
+                <input
+                  type="text"
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                  value={newProject.name}
+                  onChange={(e) => setNewProject({...newProject, name: e.target.value})}
+                  placeholder="Enter project name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                  value={newProject.description}
+                  onChange={(e) => setNewProject({...newProject, description: e.target.value})}
+                  placeholder="Enter project description"
+                  rows={3}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Color
+                </label>
+                <input
+                  type="color"
+                  className="w-full p-1 border border-gray-300 rounded-md h-10"
+                  value={newProject.color}
+                  onChange={(e) => setNewProject({...newProject, color: e.target.value})}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewProject({ name: '', description: '', color: '#3B82F6' });
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                onClick={async () => {
+                  if (newProject.name.trim()) {
+                    try {
+                      await createProject(newProject);
+                      setShowCreateModal(false);
+                      setNewProject({ name: '', description: '', color: '#3B82F6' });
+                    } catch (error) {
+                      alert('Failed to create project');
+                    }
+                  }
+                }}
+                disabled={!newProject.name.trim()}
+              >
+                Create Project
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
