@@ -90,7 +90,11 @@ const verifyToken = (token) => {
   }
 };
 
-const getUserFromToken = (authHeader) => {
+const getUserFromToken = (headers) => {
+  // Netlify Functions receive headers in lowercase
+  const authHeader = headers.authorization || headers.Authorization;
+  console.log('Auth header:', authHeader);
+  
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   const token = authHeader.split(' ')[1];
   const decoded = verifyToken(token);
@@ -107,8 +111,9 @@ exports.handler = async (event, context) => {
   
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Expose-Headers': 'Authorization',
   };
 
   if (httpMethod === 'OPTIONS') {
@@ -231,7 +236,7 @@ exports.handler = async (event, context) => {
     
     // Get projects
     else if (apiPath === '/projects' && httpMethod === 'GET') {
-      const user = getUserFromToken(headers.authorization);
+      const user = getUserFromToken(headers);
       if (!user) {
         return {
           statusCode: 401,
@@ -248,7 +253,7 @@ exports.handler = async (event, context) => {
 
     // Create project
     else if (apiPath === '/projects' && httpMethod === 'POST') {
-      const user = getUserFromToken(headers.authorization);
+      const user = getUserFromToken(headers);
       if (!user) {
         return {
           statusCode: 401,
@@ -322,7 +327,7 @@ exports.handler = async (event, context) => {
 
     // Delete project
     else if (apiPath.match(/^\/projects\/(.+)$/) && httpMethod === 'DELETE') {
-      const user = getUserFromToken(headers.authorization);
+      const user = getUserFromToken(headers);
       if (!user) {
         return {
           statusCode: 401,
@@ -348,7 +353,7 @@ exports.handler = async (event, context) => {
 
     // Create task
     else if (apiPath === '/tasks' && httpMethod === 'POST') {
-      const user = getUserFromToken(headers.authorization);
+      const user = getUserFromToken(headers);
       if (!user) {
         return {
           statusCode: 401,
@@ -398,7 +403,7 @@ exports.handler = async (event, context) => {
 
     // Delete task
     else if (apiPath.match(/^\/tasks\/(.+)$/) && httpMethod === 'DELETE') {
-      const user = getUserFromToken(headers.authorization);
+      const user = getUserFromToken(headers);
       if (!user) {
         return {
           statusCode: 401,
