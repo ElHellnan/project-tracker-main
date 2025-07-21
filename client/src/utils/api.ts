@@ -22,7 +22,11 @@ import {
   AuthResponse,
 } from '../../../shared/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || (
+  typeof window !== 'undefined' && window.location.origin.includes('netlify') 
+    ? `${window.location.origin}/.netlify/functions/api`
+    : 'http://localhost:3001/api'
+);
 
 class ApiError extends Error {
   constructor(

@@ -47,5 +47,8 @@
     "ts-jest": "^29.1.0",
     "supertest": "^6.3.3",
     "@types/supertest": "^2.0.12"
+  },
+  "prisma": {
+    "seed": "tsx src/seed.ts"
   }
 }
