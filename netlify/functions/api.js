@@ -1,17 +1,21 @@
-import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const path = require('path');
 
+// Initialize Prisma with correct database path
 const prisma = new PrismaClient({
-  datasource: {
-    url: "file:./data/prod.db"
+  datasources: {
+    db: {
+      url: `file:${path.join(__dirname, '..', 'data', 'prod.db')}`
+    }
   }
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-for-project-tracker';
 
-export const handler = async (event, context) => {
-  const { httpMethod, path, body, headers } = event;
+exports.handler = async (event, context) => {
+  const { httpMethod, path: requestPath, body, headers } = event;
   
   // Add CORS headers
   const corsHeaders = {
@@ -29,7 +33,7 @@ export const handler = async (event, context) => {
   }
 
   try {
-    const apiPath = path.replace('/.netlify/functions/api', '');
+    const apiPath = requestPath.replace('/.netlify/functions/api', '');
     let response;
 
     // Health check
@@ -42,7 +46,57 @@ export const handler = async (event, context) => {
       };
     }
     
-    // Authentication endpoints
+    // User registration
+    else if (apiPath === '/auth/register' && httpMethod === 'POST') {
+      const { email, password, username, firstName, lastName } = JSON.parse(body);
+      
+      // Check if user exists
+      const existingUser = await prisma.user.findUnique({
+        where: { email }
+      });
+      
+      if (existingUser) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'User already exists' })
+        };
+      }
+      
+      // Hash password and create user
+      const hashedPassword = await bcrypt.hash(password, 12);
+      const user = await prisma.user.create({
+        data: {
+          email,
+          password: hashedPassword,
+          username: username || email.split('@')[0],
+          firstName: firstName || 'User',
+          lastName: lastName || 'Name',
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          firstName: true,
+          lastName: true,
+          createdAt: true
+        }
+      });
+      
+      const token = jwt.sign(
+        { userId: user.id, email: user.email },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+      
+      response = {
+        success: true,
+        data: { user, token },
+        message: 'Registration successful'
+      };
+    }
+    
+    // User login
     else if (apiPath === '/auth/login' && httpMethod === 'POST') {
       const { email, password } = JSON.parse(body);
       
@@ -58,7 +112,7 @@ export const handler = async (event, context) => {
         }
       });
       
-      if (!user || !bcrypt.compareSync(password, user.password)) {
+      if (!user || !await bcrypt.compare(password, user.password)) {
         return {
           statusCode: 401,
           headers: corsHeaders,
@@ -75,8 +129,7 @@ export const handler = async (event, context) => {
       const { password: _, ...userWithoutPassword } = user;
       response = {
         success: true,
-        user: userWithoutPassword,
-        token,
+        data: { user: userWithoutPassword, token },
         message: 'Login successful'
       };
     }
@@ -92,6 +145,7 @@ export const handler = async (event, context) => {
               lastName: true
             }
           },
+          members: true,
           boards: {
             include: {
               columns: {
@@ -122,7 +176,11 @@ export const handler = async (event, context) => {
     }
     
     else {
-      response = { success: false, message: 'Endpoint not found' };
+      return {
+        statusCode: 404,
+        headers: corsHeaders,
+        body: JSON.stringify({ success: false, message: `Endpoint not found: ${apiPath}` })
+      };
     }
 
     return {
@@ -144,8 +202,11 @@ export const handler = async (event, context) => {
       },
       body: JSON.stringify({
         success: false,
-        error: error.message
+        error: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       }),
     };
+  } finally {
+    await prisma.$disconnect();
   }
 };

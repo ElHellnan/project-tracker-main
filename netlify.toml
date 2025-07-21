@@ -1,11 +1,12 @@
 [build]
   base = "."
   publish = "client/dist"
-  command = "cd client && npm install && npm run build"
+  command = "cd client && npm install && npm run build && cd ../netlify/functions && npm install"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  external_node_modules = ["@prisma/client"]
 
 [[redirects]]
   from = "/api/*"
