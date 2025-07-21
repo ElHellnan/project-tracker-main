@@ -1,17 +1,15 @@
 [build]
   base = "."
   publish = "client/dist"
-  command = "cd client && npm install && npm run build && cd ../netlify/functions && npm install && npx prisma generate"
+  command = "cd client && npm install && npm run build && cd ../netlify/functions && npm install"
 
 [build.environment]
   NODE_VERSION = "18"
-  DATABASE_URL = "file:./data/prod.db"
   JWT_SECRET = "your-super-secret-jwt-key-for-project-tracker-2024"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  external_node_modules = ["@prisma/client", "prisma"]
 
 [[redirects]]
   from = "/api/*"

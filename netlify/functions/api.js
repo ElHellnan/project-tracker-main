@@ -1,40 +1,70 @@
-const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-let prisma;
-
-// Initialize Prisma only once
-const initPrisma = () => {
-  if (!prisma) {
-    try {
-      prisma = new PrismaClient({
-        datasources: {
-          db: {
-            url: process.env.DATABASE_URL || "file:./data/prod.db"
-          }
-        },
-        log: ['error']
-      });
-    } catch (error) {
-      console.error('Failed to initialize Prisma:', error);
-      throw error;
-    }
+// Simple in-memory store for demo (will reset on each function call)
+let users = [
+  {
+    id: '1',
+    email: 'test@example.com',
+    password: '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewkkR.9ePLFa1.ZK', // password123
+    username: 'testuser',
+    firstName: 'Test',
+    lastName: 'User',
+    createdAt: new Date().toISOString()
   }
-  return prisma;
-};
+];
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-for-project-tracker';
+let projects = [
+  {
+    id: '1',
+    name: 'My First Project',
+    description: 'Welcome to your project tracker!',
+    color: '#3B82F6',
+    owner: {
+      username: 'testuser',
+      firstName: 'Test',
+      lastName: 'User'
+    },
+    members: [],
+    boards: [
+      {
+        id: '1',
+        name: 'Main Board',
+        columns: [
+          {
+            id: '1',
+            name: 'To Do',
+            tasks: [
+              { id: '1', title: 'Welcome Task', description: 'Start using your project tracker!' }
+            ]
+          },
+          {
+            id: '2',
+            name: 'In Progress',
+            tasks: []
+          },
+          {
+            id: '3',
+            name: 'Done',
+            tasks: []
+          }
+        ]
+      }
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+];
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-for-project-tracker-2024';
 
 exports.handler = async (event, context) => {
-  // Prevent function from timing out
   context.callbackWaitsForEmptyEventLoop = false;
   
   const { httpMethod, path: requestPath, body, headers } = event;
   
-  console.log('Function called:', { httpMethod, requestPath, body: body?.substring(0, 100) });
+  console.log('Function called:', { httpMethod, requestPath });
   
-  // Add CORS headers
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -50,9 +80,6 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    // Initialize Prisma
-    const db = initPrisma();
-    
     const apiPath = requestPath.replace('/.netlify/functions/api', '');
     console.log('API Path:', apiPath);
     
@@ -64,7 +91,7 @@ exports.handler = async (event, context) => {
         success: true,
         message: 'Project Tracker API is running on Netlify!',
         timestamp: new Date().toISOString(),
-        database: 'SQLite',
+        database: 'In-Memory',
         path: apiPath
       };
     }
@@ -75,6 +102,8 @@ exports.handler = async (event, context) => {
       const requestData = JSON.parse(body || '{}');
       const { email, password, username, firstName, lastName } = requestData;
       
+      console.log('Registration data:', { email, username, firstName, lastName });
+      
       if (!email || !password) {
         return {
           statusCode: 400,
@@ -84,10 +113,7 @@ exports.handler = async (event, context) => {
       }
       
       // Check if user exists
-      const existingUser = await db.user.findUnique({
-        where: { email }
-      });
-      
+      const existingUser = users.find(u => u.email === email);
       if (existingUser) {
         return {
           statusCode: 400,
@@ -98,34 +124,30 @@ exports.handler = async (event, context) => {
       
       // Hash password and create user
       const hashedPassword = await bcrypt.hash(password, 12);
-      const user = await db.user.create({
-        data: {
-          email,
-          password: hashedPassword,
-          username: username || email.split('@')[0],
-          firstName: firstName || 'User',
-          lastName: lastName || 'Name',
-        },
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          firstName: true,
-          lastName: true,
-          createdAt: true
-        }
-      });
+      const newUser = {
+        id: Date.now().toString(),
+        email,
+        password: hashedPassword,
+        username: username || email.split('@')[0],
+        firstName: firstName || 'User',
+        lastName: lastName || 'Name',
+        createdAt: new Date().toISOString()
+      };
+      
+      users.push(newUser);
       
       const token = jwt.sign(
-        { userId: user.id, email: user.email },
+        { userId: newUser.id, email: newUser.email },
         JWT_SECRET,
         { expiresIn: '7d' }
       );
       
+      const { password: _, ...userWithoutPassword } = newUser;
       console.log('Registration successful for:', email);
+      
       response = {
         success: true,
-        data: { user, token },
+        data: { user: userWithoutPassword, token },
         message: 'Registration successful'
       };
     }
@@ -136,6 +158,8 @@ exports.handler = async (event, context) => {
       const requestData = JSON.parse(body || '{}');
       const { email, password } = requestData;
       
+      console.log('Login attempt for:', email);
+      
       if (!email || !password) {
         return {
           statusCode: 400,
@@ -144,18 +168,7 @@ exports.handler = async (event, context) => {
         };
       }
       
-      const user = await db.user.findUnique({
-        where: { email },
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          firstName: true,
-          lastName: true,
-          password: true
-        }
-      });
-      
+      const user = users.find(u => u.email === email);
       if (!user) {
         return {
           statusCode: 401,
@@ -181,6 +194,7 @@ exports.handler = async (event, context) => {
       
       const { password: _, ...userWithoutPassword } = user;
       console.log('Login successful for:', email);
+      
       response = {
         success: true,
         data: { user: userWithoutPassword, token },
@@ -190,43 +204,15 @@ exports.handler = async (event, context) => {
     
     // Get projects
     else if (apiPath === '/projects' && httpMethod === 'GET') {
-      const projects = await db.project.findMany({
-        include: {
-          owner: {
-            select: {
-              username: true,
-              firstName: true,
-              lastName: true
-            }
-          },
-          members: true,
-          boards: {
-            include: {
-              columns: {
-                include: {
-                  tasks: true
-                }
-              }
-            }
-          }
-        }
-      });
+      console.log('Fetching projects');
       response = { success: true, data: projects };
     }
     
     // Get users
     else if (apiPath === '/users' && httpMethod === 'GET') {
-      const users = await db.user.findMany({
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          firstName: true,
-          lastName: true,
-          createdAt: true
-        }
-      });
-      response = { success: true, data: users };
+      console.log('Fetching users');
+      const publicUsers = users.map(({ password, ...user }) => user);
+      response = { success: true, data: publicUsers };
     }
     
     else {
@@ -263,8 +249,7 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         success: false,
         error: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
-        details: 'Check function logs for more information'
+        details: 'Internal server error occurred'
       }),
     };
   }
