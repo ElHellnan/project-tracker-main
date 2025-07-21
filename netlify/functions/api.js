@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// Simple in-memory store for demo (will reset on each function call)
+// In-memory data stores
 let users = [
   {
     id: '1',
@@ -20,32 +20,50 @@ let projects = [
     name: 'My First Project',
     description: 'Welcome to your project tracker!',
     color: '#3B82F6',
+    ownerId: '1',
     owner: {
       username: 'testuser',
       firstName: 'Test',
       lastName: 'User'
     },
-    members: [],
+    members: [{ userId: '1', role: 'OWNER' }],
     boards: [
       {
         id: '1',
         name: 'Main Board',
+        projectId: '1',
         columns: [
           {
             id: '1',
             name: 'To Do',
+            boardId: '1',
+            position: 0,
             tasks: [
-              { id: '1', title: 'Welcome Task', description: 'Start using your project tracker!' }
+              { 
+                id: '1', 
+                title: 'Welcome Task', 
+                description: 'Start using your project tracker!',
+                columnId: '1',
+                position: 0,
+                priority: 'MEDIUM',
+                status: 'TODO',
+                assigneeId: '1',
+                createdAt: new Date().toISOString()
+              }
             ]
           },
           {
             id: '2',
             name: 'In Progress',
+            boardId: '1',
+            position: 1,
             tasks: []
           },
           {
             id: '3',
             name: 'Done',
+            boardId: '1',
+            position: 2,
             tasks: []
           }
         ]
@@ -56,7 +74,29 @@ let projects = [
   }
 ];
 
+let tasks = [];
+let comments = [];
+
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-for-project-tracker-2024';
+
+// Helper functions
+const generateId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
+
+const verifyToken = (token) => {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
+    return null;
+  }
+};
+
+const getUserFromToken = (authHeader) => {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.split(' ')[1];
+  const decoded = verifyToken(token);
+  if (!decoded) return null;
+  return users.find(u => u.id === decoded.userId);
+};
 
 exports.handler = async (event, context) => {
   context.callbackWaitsForEmptyEventLoop = false;
@@ -98,11 +138,8 @@ exports.handler = async (event, context) => {
     
     // User registration
     else if (apiPath === '/auth/register' && httpMethod === 'POST') {
-      console.log('Registration attempt');
       const requestData = JSON.parse(body || '{}');
       const { email, password, username, firstName, lastName } = requestData;
-      
-      console.log('Registration data:', { email, username, firstName, lastName });
       
       if (!email || !password) {
         return {
@@ -112,7 +149,6 @@ exports.handler = async (event, context) => {
         };
       }
       
-      // Check if user exists
       const existingUser = users.find(u => u.email === email);
       if (existingUser) {
         return {
@@ -122,10 +158,9 @@ exports.handler = async (event, context) => {
         };
       }
       
-      // Hash password and create user
       const hashedPassword = await bcrypt.hash(password, 12);
       const newUser = {
-        id: Date.now().toString(),
+        id: generateId(),
         email,
         password: hashedPassword,
         username: username || email.split('@')[0],
@@ -143,8 +178,6 @@ exports.handler = async (event, context) => {
       );
       
       const { password: _, ...userWithoutPassword } = newUser;
-      console.log('Registration successful for:', email);
-      
       response = {
         success: true,
         data: { user: userWithoutPassword, token },
@@ -154,11 +187,8 @@ exports.handler = async (event, context) => {
     
     // User login
     else if (apiPath === '/auth/login' && httpMethod === 'POST') {
-      console.log('Login attempt');
       const requestData = JSON.parse(body || '{}');
       const { email, password } = requestData;
-      
-      console.log('Login attempt for:', email);
       
       if (!email || !password) {
         return {
@@ -169,16 +199,7 @@ exports.handler = async (event, context) => {
       }
       
       const user = users.find(u => u.email === email);
-      if (!user) {
-        return {
-          statusCode: 401,
-          headers: corsHeaders,
-          body: JSON.stringify({ success: false, message: 'Invalid credentials' })
-        };
-      }
-      
-      const passwordValid = await bcrypt.compare(password, user.password);
-      if (!passwordValid) {
+      if (!user || !await bcrypt.compare(password, user.password)) {
         return {
           statusCode: 401,
           headers: corsHeaders,
@@ -193,24 +214,226 @@ exports.handler = async (event, context) => {
       );
       
       const { password: _, ...userWithoutPassword } = user;
-      console.log('Login successful for:', email);
-      
       response = {
         success: true,
         data: { user: userWithoutPassword, token },
         message: 'Login successful'
       };
     }
+
+    // User logout
+    else if (apiPath === '/auth/logout' && httpMethod === 'POST') {
+      response = {
+        success: true,
+        message: 'Logged out successfully'
+      };
+    }
     
     // Get projects
     else if (apiPath === '/projects' && httpMethod === 'GET') {
-      console.log('Fetching projects');
-      response = { success: true, data: projects };
+      const user = getUserFromToken(headers.authorization);
+      if (!user) {
+        return {
+          statusCode: 401,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Unauthorized' })
+        };
+      }
+      
+      const userProjects = projects.filter(p => 
+        p.ownerId === user.id || p.members.some(m => m.userId === user.id)
+      );
+      response = { success: true, data: userProjects };
+    }
+
+    // Create project
+    else if (apiPath === '/projects' && httpMethod === 'POST') {
+      const user = getUserFromToken(headers.authorization);
+      if (!user) {
+        return {
+          statusCode: 401,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Unauthorized' })
+        };
+      }
+
+      const requestData = JSON.parse(body || '{}');
+      const { name, description, color } = requestData;
+
+      if (!name) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Project name is required' })
+        };
+      }
+
+      const newProject = {
+        id: generateId(),
+        name,
+        description: description || '',
+        color: color || '#3B82F6',
+        ownerId: user.id,
+        owner: {
+          username: user.username,
+          firstName: user.firstName,
+          lastName: user.lastName
+        },
+        members: [{ userId: user.id, role: 'OWNER' }],
+        boards: [{
+          id: generateId(),
+          name: 'Main Board',
+          projectId: null,
+          columns: [
+            {
+              id: generateId(),
+              name: 'To Do',
+              boardId: null,
+              position: 0,
+              tasks: []
+            },
+            {
+              id: generateId(),
+              name: 'In Progress',
+              boardId: null,
+              position: 1,
+              tasks: []
+            },
+            {
+              id: generateId(),
+              name: 'Done',
+              boardId: null,
+              position: 2,
+              tasks: []
+            }
+          ]
+        }],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      // Update references
+      newProject.boards[0].projectId = newProject.id;
+      newProject.boards[0].columns.forEach(col => col.boardId = newProject.boards[0].id);
+
+      projects.push(newProject);
+      response = { success: true, data: newProject };
+    }
+
+    // Delete project
+    else if (apiPath.match(/^\/projects\/(.+)$/) && httpMethod === 'DELETE') {
+      const user = getUserFromToken(headers.authorization);
+      if (!user) {
+        return {
+          statusCode: 401,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Unauthorized' })
+        };
+      }
+
+      const projectId = apiPath.split('/')[2];
+      const project = projects.find(p => p.id === projectId);
+
+      if (!project || project.ownerId !== user.id) {
+        return {
+          statusCode: 404,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Project not found or access denied' })
+        };
+      }
+
+      projects = projects.filter(p => p.id !== projectId);
+      response = { success: true, message: 'Project deleted successfully' };
+    }
+
+    // Create task
+    else if (apiPath === '/tasks' && httpMethod === 'POST') {
+      const user = getUserFromToken(headers.authorization);
+      if (!user) {
+        return {
+          statusCode: 401,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Unauthorized' })
+        };
+      }
+
+      const requestData = JSON.parse(body || '{}');
+      const { title, description, columnId, priority, assigneeId } = requestData;
+
+      if (!title || !columnId) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Title and column are required' })
+        };
+      }
+
+      const newTask = {
+        id: generateId(),
+        title,
+        description: description || '',
+        columnId,
+        position: 0, // Add to top of column
+        priority: priority || 'MEDIUM',
+        status: 'TODO',
+        assigneeId: assigneeId || user.id,
+        creatorId: user.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      // Find the column and add task
+      for (const project of projects) {
+        for (const board of project.boards) {
+          const column = board.columns.find(c => c.id === columnId);
+          if (column) {
+            column.tasks.unshift(newTask); // Add to beginning
+            break;
+          }
+        }
+      }
+
+      response = { success: true, data: newTask };
+    }
+
+    // Delete task
+    else if (apiPath.match(/^\/tasks\/(.+)$/) && httpMethod === 'DELETE') {
+      const user = getUserFromToken(headers.authorization);
+      if (!user) {
+        return {
+          statusCode: 401,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Unauthorized' })
+        };
+      }
+
+      const taskId = apiPath.split('/')[2];
+
+      // Find and remove task
+      for (const project of projects) {
+        for (const board of project.boards) {
+          for (const column of board.columns) {
+            const taskIndex = column.tasks.findIndex(t => t.id === taskId);
+            if (taskIndex > -1) {
+              column.tasks.splice(taskIndex, 1);
+              response = { success: true, message: 'Task deleted successfully' };
+              break;
+            }
+          }
+        }
+      }
+
+      if (!response) {
+        return {
+          statusCode: 404,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Task not found' })
+        };
+      }
     }
     
     // Get users
     else if (apiPath === '/users' && httpMethod === 'GET') {
-      console.log('Fetching users');
       const publicUsers = users.map(({ password, ...user }) => user);
       response = { success: true, data: publicUsers };
     }
@@ -222,12 +445,22 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ 
           success: false, 
           message: `Endpoint not found: ${apiPath}`,
-          availableEndpoints: ['/health', '/auth/register', '/auth/login', '/projects', '/users']
+          availableEndpoints: [
+            'GET /health', 
+            'POST /auth/register', 
+            'POST /auth/login', 
+            'POST /auth/logout',
+            'GET /projects',
+            'POST /projects',
+            'DELETE /projects/:id',
+            'POST /tasks',
+            'DELETE /tasks/:id',
+            'GET /users'
+          ]
         })
       };
     }
 
-    console.log('Response ready:', response.success);
     return {
       statusCode: 200,
       headers: {
@@ -239,7 +472,6 @@ exports.handler = async (event, context) => {
     
   } catch (error) {
     console.error('API Error:', error);
-    console.error('Stack:', error.stack);
     return {
       statusCode: 500,
       headers: {
