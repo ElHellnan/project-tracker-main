@@ -93,13 +93,26 @@ const verifyToken = (token) => {
 const getUserFromToken = (headers) => {
   // Netlify Functions receive headers in lowercase
   const authHeader = headers.authorization || headers.Authorization;
-  console.log('Auth header:', authHeader);
+  console.log('Auth header received:', authHeader);
+  console.log('All headers:', Object.keys(headers));
   
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.log('No valid auth header found');
+    return null;
+  }
+  
   const token = authHeader.split(' ')[1];
+  console.log('Extracted token:', token ? 'present' : 'missing');
+  
   const decoded = verifyToken(token);
+  console.log('Token decoded:', decoded ? 'success' : 'failed');
+  
   if (!decoded) return null;
-  return users.find(u => u.id === decoded.userId);
+  
+  const user = users.find(u => u.id === decoded.userId);
+  console.log('User found:', user ? user.email : 'none');
+  
+  return user;
 };
 
 exports.handler = async (event, context) => {
@@ -138,6 +151,17 @@ exports.handler = async (event, context) => {
         timestamp: new Date().toISOString(),
         database: 'In-Memory',
         path: apiPath
+      };
+    }
+    
+    // Debug auth endpoint
+    else if (apiPath === '/auth/debug' && httpMethod === 'GET') {
+      const user = getUserFromToken(headers);
+      response = {
+        success: true,
+        authenticated: !!user,
+        user: user ? { id: user.id, email: user.email } : null,
+        message: user ? 'User authenticated' : 'Not authenticated'
       };
     }
     
