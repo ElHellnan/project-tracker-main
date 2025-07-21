@@ -51,7 +51,7 @@ export const Projects = () => {
             </p>
             
             <div className="flex items-center justify-between text-sm text-gray-500">
-              <span>{project._count?.boards} boards</span>
+              <span>{project.boards?.length || 0} boards</span>
               <span>{project.members.length} members</span>
             </div>
             

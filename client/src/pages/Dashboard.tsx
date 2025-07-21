@@ -98,7 +98,7 @@ export const Dashboard = () => {
                   </div>
                 </div>
                 <span className="text-sm text-gray-500">
-                  {project._count?.boards} boards
+                  {project.boards?.length || 0} boards
                 </span>
               </div>
             ))}

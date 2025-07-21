@@ -9,7 +9,7 @@ import {
   CreateCommentDto,
   Attachment
 } from '../../../shared/types';
-import { tasksApi, commentsApi, attachmentsApi, columnsApi } from '../utils/api';
+import { tasksApi, commentsApi, attachmentsApi } from '../utils/api';
 
 interface TaskState {
   tasks: Task[];

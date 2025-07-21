@@ -3,7 +3,7 @@ import { devtools } from 'zustand/middleware';
 import { 
   Project, 
   Board, 
-  Task, 
+ 
   CreateProjectDto, 
   UpdateProjectDto,
   CreateBoardDto,

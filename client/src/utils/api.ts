@@ -22,7 +22,7 @@ import {
   AuthResponse,
 } from '../../../shared/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || (
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || (
   typeof window !== 'undefined' && window.location.origin.includes('netlify') 
     ? `${window.location.origin}/.netlify/functions/api`
     : 'http://localhost:3001/api'
