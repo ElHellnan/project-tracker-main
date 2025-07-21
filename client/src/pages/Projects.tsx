@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useProjectStore } from '@/store/projectStore';
+import React, { useEffect, useState } from 'react';
+import { useProjectStore } from '../store/projectStore';
 
 export const Projects = () => {
   const { projects, fetchProjects, createProject, deleteProject, isLoading } = useProjectStore();

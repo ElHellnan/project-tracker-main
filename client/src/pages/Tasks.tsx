@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { useProjectStore } from '@/store/projectStore';
-import { useTaskStore } from '@/store/taskStore';
+import React, { useEffect, useState } from 'react';
+import { useProjectStore } from '../store/projectStore';
+import { useTaskStore } from '../store/taskStore';
 
 export const Tasks = () => {
   const { projects, fetchProjects } = useProjectStore();

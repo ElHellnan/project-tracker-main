@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
-import { useAuthStore } from '@/store/authStore';
-import { useProjectStore } from '@/store/projectStore';
+import React, { useEffect } from 'react';
+import { useAuthStore } from '../store/authStore';
+import { useProjectStore } from '../store/projectStore';
 
 export const Dashboard = () => {
   const { user } = useAuthStore();
