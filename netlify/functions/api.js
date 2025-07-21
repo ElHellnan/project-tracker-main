@@ -1,21 +1,38 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const path = require('path');
 
-// Initialize Prisma with correct database path
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: `file:${path.join(__dirname, '..', 'data', 'prod.db')}`
+let prisma;
+
+// Initialize Prisma only once
+const initPrisma = () => {
+  if (!prisma) {
+    try {
+      prisma = new PrismaClient({
+        datasources: {
+          db: {
+            url: process.env.DATABASE_URL || "file:./data/prod.db"
+          }
+        },
+        log: ['error']
+      });
+    } catch (error) {
+      console.error('Failed to initialize Prisma:', error);
+      throw error;
     }
   }
-});
+  return prisma;
+};
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-for-project-tracker';
 
 exports.handler = async (event, context) => {
+  // Prevent function from timing out
+  context.callbackWaitsForEmptyEventLoop = false;
+  
   const { httpMethod, path: requestPath, body, headers } = event;
+  
+  console.log('Function called:', { httpMethod, requestPath, body: body?.substring(0, 100) });
   
   // Add CORS headers
   const corsHeaders = {
@@ -33,7 +50,12 @@ exports.handler = async (event, context) => {
   }
 
   try {
+    // Initialize Prisma
+    const db = initPrisma();
+    
     const apiPath = requestPath.replace('/.netlify/functions/api', '');
+    console.log('API Path:', apiPath);
+    
     let response;
 
     // Health check
@@ -42,16 +64,27 @@ exports.handler = async (event, context) => {
         success: true,
         message: 'Project Tracker API is running on Netlify!',
         timestamp: new Date().toISOString(),
-        database: 'SQLite'
+        database: 'SQLite',
+        path: apiPath
       };
     }
     
     // User registration
     else if (apiPath === '/auth/register' && httpMethod === 'POST') {
-      const { email, password, username, firstName, lastName } = JSON.parse(body);
+      console.log('Registration attempt');
+      const requestData = JSON.parse(body || '{}');
+      const { email, password, username, firstName, lastName } = requestData;
+      
+      if (!email || !password) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Email and password are required' })
+        };
+      }
       
       // Check if user exists
-      const existingUser = await prisma.user.findUnique({
+      const existingUser = await db.user.findUnique({
         where: { email }
       });
       
@@ -65,7 +98,7 @@ exports.handler = async (event, context) => {
       
       // Hash password and create user
       const hashedPassword = await bcrypt.hash(password, 12);
-      const user = await prisma.user.create({
+      const user = await db.user.create({
         data: {
           email,
           password: hashedPassword,
@@ -89,6 +122,7 @@ exports.handler = async (event, context) => {
         { expiresIn: '7d' }
       );
       
+      console.log('Registration successful for:', email);
       response = {
         success: true,
         data: { user, token },
@@ -98,9 +132,19 @@ exports.handler = async (event, context) => {
     
     // User login
     else if (apiPath === '/auth/login' && httpMethod === 'POST') {
-      const { email, password } = JSON.parse(body);
+      console.log('Login attempt');
+      const requestData = JSON.parse(body || '{}');
+      const { email, password } = requestData;
       
-      const user = await prisma.user.findUnique({
+      if (!email || !password) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Email and password are required' })
+        };
+      }
+      
+      const user = await db.user.findUnique({
         where: { email },
         select: {
           id: true,
@@ -112,7 +156,16 @@ exports.handler = async (event, context) => {
         }
       });
       
-      if (!user || !await bcrypt.compare(password, user.password)) {
+      if (!user) {
+        return {
+          statusCode: 401,
+          headers: corsHeaders,
+          body: JSON.stringify({ success: false, message: 'Invalid credentials' })
+        };
+      }
+      
+      const passwordValid = await bcrypt.compare(password, user.password);
+      if (!passwordValid) {
         return {
           statusCode: 401,
           headers: corsHeaders,
@@ -127,6 +180,7 @@ exports.handler = async (event, context) => {
       );
       
       const { password: _, ...userWithoutPassword } = user;
+      console.log('Login successful for:', email);
       response = {
         success: true,
         data: { user: userWithoutPassword, token },
@@ -136,7 +190,7 @@ exports.handler = async (event, context) => {
     
     // Get projects
     else if (apiPath === '/projects' && httpMethod === 'GET') {
-      const projects = await prisma.project.findMany({
+      const projects = await db.project.findMany({
         include: {
           owner: {
             select: {
@@ -162,7 +216,7 @@ exports.handler = async (event, context) => {
     
     // Get users
     else if (apiPath === '/users' && httpMethod === 'GET') {
-      const users = await prisma.user.findMany({
+      const users = await db.user.findMany({
         select: {
           id: true,
           email: true,
@@ -179,10 +233,15 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 404,
         headers: corsHeaders,
-        body: JSON.stringify({ success: false, message: `Endpoint not found: ${apiPath}` })
+        body: JSON.stringify({ 
+          success: false, 
+          message: `Endpoint not found: ${apiPath}`,
+          availableEndpoints: ['/health', '/auth/register', '/auth/login', '/projects', '/users']
+        })
       };
     }
 
+    console.log('Response ready:', response.success);
     return {
       statusCode: 200,
       headers: {
@@ -194,6 +253,7 @@ exports.handler = async (event, context) => {
     
   } catch (error) {
     console.error('API Error:', error);
+    console.error('Stack:', error.stack);
     return {
       statusCode: 500,
       headers: {
@@ -203,10 +263,9 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         success: false,
         error: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        details: 'Check function logs for more information'
       }),
     };
-  } finally {
-    await prisma.$disconnect();
   }
 };

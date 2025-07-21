@@ -1,9 +1,11 @@
 {
   "name": "netlify-functions",
   "version": "1.0.0",
+  "main": "api.js",
   "dependencies": {
     "@prisma/client": "^4.13.0",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.0"
+    "jsonwebtoken": "^9.0.0",
+    "prisma": "^4.13.0"
   }
 }

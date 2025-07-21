@@ -1,0 +1,172 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  firstName String
+  lastName  String
+  password  String
+  avatar    String?
+  bio       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  ownedProjects     Project[]         @relation("ProjectOwner")
+  projectMemberships ProjectMember[]
+  assignedTasks     Task[]            @relation("TaskAssignee")
+  createdTasks      Task[]            @relation("TaskCreator")
+  comments          Comment[]
+  attachments       Attachment[]
+
+  @@map("users")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String?  @default("#4F46E5")
+  isArchived  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  owner     User            @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId   String
+  members   ProjectMember[]
+  boards    Board[]
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  id   String @id @default(cuid())
+  role String @default("MEMBER")
+
+  // Relationships
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, projectId])
+  @@map("project_members")
+}
+
+model Board {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  columns   Column[]
+
+  @@map("boards")
+}
+
+model Column {
+  id       String @id @default(cuid())
+  name     String
+  color    String @default("#6B7280")
+  position Int    @default(0)
+  limit    Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId String
+  tasks   Task[]
+
+  @@map("columns")
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  priority    String     @default("MEDIUM")
+  status      String     @default("TODO")
+  position    Int        @default(0)
+  dueDate     DateTime?
+  startDate   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relationships
+  column      Column       @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  columnId    String
+  assignee    User?        @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  assigneeId  String?
+  creator     User         @relation("TaskCreator", fields: [creatorId], references: [id])
+  creatorId   String
+  comments    Comment[]
+  attachments Attachment[]
+
+  @@map("tasks")
+}
+
+model Comment {
+  id      String @id @default(cuid())
+  content String
+  edited  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId String
+  author User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId String
+
+  @@map("comments")
+}
+
+model Attachment {
+  id       String @id @default(cuid())
+  filename String
+  originalName String
+  mimeType String
+  size     Int
+  path     String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  task       Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId     String
+  uploadedBy User   @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  uploadedById String
+
+  @@map("attachments")
+}
+
+// Note: SQLite doesn't support enums, so we use strings with constraints in the application layer
+// Valid values:
+// Role: "OWNER", "ADMIN", "MEMBER", "VIEWER"  
+// Priority: "LOW", "MEDIUM", "HIGH", "URGENT"
+// TaskStatus: "TODO", "IN_PROGRESS", "REVIEW", "DONE", "CANCELLED"
